@@ -10,7 +10,7 @@ const app = express();
 
 // middleware
 const corsOptions = {
-  origin: ["http://localhost:5173", "http://localhost:5174"],
+  origin: ["http://localhost:5173", "http://localhost:5174", "https://theroyal-palace.web.app"],
   credentials: true,
   optionSuccessStatus: 200,
 };
@@ -31,7 +31,7 @@ const client = new MongoClient(uri, {
 
 async function run() {
   try {
-    await client.connect();
+    // await client.connect();
 
     const db = client.db('building_management');
     const usersCollection = db.collection('users');
@@ -199,7 +199,6 @@ async function run() {
         }
         res.status(200).json(user);
       } catch (err) {
-        console.error('Error fetching user:', err);
         res.status(500).send(err);
       }
     });
@@ -277,14 +276,27 @@ async function run() {
       }
     });
 
+    // Endpoint to delete a coupon
+    app.delete('/coupons/:id', async (req, res) => {
+      const couponId = req.params.id;
+      try {
+        const result = await couponsCollection.deleteOne({ _id: new ObjectId(couponId) });
+        if (result.deletedCount === 0) {
+          return res.status(404).json({ message: 'Coupon not found.' });
+        }
+        res.status(200).json({ message: 'Coupon deleted successfully.' });
+      } catch (err) {
+        console.error('Error deleting coupon:', err);
+        res.status(500).send(err);
+      }
+    });
+
     app.get('/agreements/user/:email', async (req, res) => {
       const email = req.params.email;
       try {
         const agreements = await agreementsCollection.find({ userEmail: email }).toArray();
-        console.log('Agreements:', agreements);
         res.status(200).json(agreements);
       } catch (err) {
-        console.error('Error fetching agreements:', err);
         res.status(500).send(err);
       }
     });
@@ -309,7 +321,6 @@ async function run() {
           totalMembers,
         });
       } catch (err) {
-        console.error('Error fetching database statistics:', err);
         res.status(500).send(err);
       }
     });
@@ -334,8 +345,6 @@ async function run() {
 
       res.json({ id: session.id });
     });
-
-
 
     // Send a ping to confirm a successful connection
     await client.db("admin").command({ ping: 1 });
