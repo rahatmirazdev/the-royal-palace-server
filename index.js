@@ -1,0 +1,355 @@
+require("dotenv").config();
+const express = require("express");
+const cors = require("cors");
+const cookieParser = require("cookie-parser");
+const { MongoClient, ServerApiVersion, ObjectId } = require("mongodb");
+const morgan = require("morgan");
+const stripe = require("stripe")(process.env.STRIPE_SECRET_KEY);
+const port = process.env.PORT || 3000;
+const app = express();
+
+// middleware
+const corsOptions = {
+  origin: ["http://localhost:5173", "http://localhost:5174"],
+  credentials: true,
+  optionSuccessStatus: 200,
+};
+app.use(cors(corsOptions));
+app.use(express.json());
+app.use(cookieParser());
+app.use(morgan("dev"));
+
+const uri = `mongodb+srv://${process.env.DB_USER}:${process.env.DB_PASS}@cluster0.kbbnu.mongodb.net/?retryWrites=true&w=majority&appName=Cluster0`;
+
+const client = new MongoClient(uri, {
+  serverApi: {
+    version: ServerApiVersion.v1,
+    strict: true,
+    deprecationErrors: true,
+  },
+});
+
+async function run() {
+  try {
+    await client.connect();
+
+    const db = client.db('building_management');
+    const usersCollection = db.collection('users');
+    const apartmentsCollection = db.collection('apartments');
+    const agreementsCollection = db.collection('agreements');
+    const announcementsCollection = db.collection('announcements');
+    const couponsCollection = db.collection('coupons');
+
+    // Middleware to check if the user is an admin
+    const verifyAdmin = async (req, res, next) => {
+      const email = req.user.email;
+      const user = await client.db('building_management').collection('users').findOne({ email });
+      if (user.role !== 'admin') {
+        return res.status(403).send('Access Denied');
+      }
+      next();
+    };
+
+    // save or update user in the database
+    app.post("/users/:email", async (req, res) => {
+      const email = req.params.email;
+      const query = { email };
+      const user = req.body;
+      const isExist = await usersCollection.findOne(query);
+      if (isExist) {
+        return res.status(400).json({ message: 'User already exists.' });
+      }
+      const result = await usersCollection.insertOne({ ...user, timestamp: Date.now(), role: 'user' });
+      res.send(result);
+    });
+
+    // get all users
+    app.get('/users', async (req, res) => {
+      try {
+        const users = await usersCollection.find().toArray();
+        res.status(200).json(users);
+      } catch (err) {
+        res.status(500).send(err);
+      }
+    });
+
+    // Get apartments with pagination and filtering
+    app.get('/apartments', async (req, res) => {
+      const { page = 1, limit = 6, minRent, maxRent } = req.query;
+      const query = {};
+      if (minRent && maxRent) {
+        query.rent = { $gte: parseInt(minRent), $lte: parseInt(maxRent) };
+      }
+      const apartments = await apartmentsCollection.find(query)
+        .limit(limit * 1)
+        .skip((page - 1) * limit)
+        .toArray();
+      const count = await apartmentsCollection.countDocuments(query);
+      res.json({
+        apartments,
+        totalPages: Math.ceil(count / limit),
+        currentPage: page,
+      });
+    });
+
+    // Endpoint to create a new agreement
+    app.post('/apartments/agreement', async (req, res) => {
+      const { userName, userEmail, floorNo, blockName, apartmentNo, rent, requestDate } = req.body;
+      const existingAgreement = await agreementsCollection.findOne({ userEmail, apartmentNo });
+      if (existingAgreement) {
+        return res.status(400).json({ message: 'You have already applied for this apartment.' });
+      }
+      const agreement = {
+        userName,
+        userEmail,
+        floorNo,
+        blockName,
+        apartmentNo,
+        rent,
+        status: 'pending',
+        requestDate, // Add the request date here
+      };
+      await agreementsCollection.insertOne(agreement);
+      res.status(201).json({ message: 'Agreement successful.' });
+    });
+
+    // Endpoint to fetch agreements
+    app.get('/agreements', async (req, res) => {
+      try {
+        const agreements = await agreementsCollection.find().toArray();
+        res.send(agreements);
+      } catch (err) {
+        res.status(500).send(err);
+      }
+    });
+
+    // Endpoint to accept an agreement
+    app.post('/agreements/:id/accept', async (req, res) => {
+      const agreementId = req.params.id;
+      try {
+        const agreement = await agreementsCollection.findOne({ _id: new ObjectId(agreementId) });
+        if (!agreement) {
+          return res.status(404).json({ message: 'Agreement not found.' });
+        }
+        await agreementsCollection.updateOne(
+          { _id: new ObjectId(agreementId) },
+          { $set: { status: 'accepted' } }
+        );
+        await usersCollection.updateOne(
+          { email: agreement.userEmail },
+          { $set: { role: 'member' } }
+        );
+        res.status(200).json({ message: 'Agreement accepted successfully.' });
+      } catch (err) {
+        res.status(500).send(err);
+      }
+    });
+
+    // Endpoint to reject an agreement
+    app.post('/agreements/:id/reject', async (req, res) => {
+      const agreementId = req.params.id;
+      try {
+        const agreement = await agreementsCollection.findOne({ _id: new ObjectId(agreementId) });
+        if (!agreement) {
+          return res.status(404).json({ message: 'Agreement not found.' });
+        }
+        await agreementsCollection.updateOne(
+          { _id: new ObjectId(agreementId) },
+          { $set: { status: 'rejected' } }
+        );
+        res.status(200).json({ message: 'Agreement rejected successfully.' });
+      } catch (err) {
+        res.status(500).send(err);
+      }
+    });
+
+    // Endpoint to post an announcement
+    app.post('/announcements', async (req, res) => {
+      const { title, description } = req.body;
+
+      const announcement = {
+        title,
+        description,
+      };
+
+      try {
+        await announcementsCollection.insertOne(announcement);
+        res.status(201).json({ message: 'Announcement made successfully' });
+      } catch (error) {
+        res.status(500).json({ message: 'Failed to make announcement' });
+      }
+    });
+
+    // Endpoint to fetch announcements
+    app.get('/announcements', async (req, res) => {
+      try {
+        const announcements = await announcementsCollection.find().toArray();
+        res.status(200).json(announcements);
+      } catch (error) {
+        res.status(500).json({ message: 'Failed to fetch announcements' });
+      }
+    });
+
+    app.get('/users/:email', async (req, res) => {
+      const email = req.params.email;
+      try {
+        const user = await usersCollection.findOne({ email });
+        if (!user) {
+          return res.status(404).json({ message: 'User not found' });
+        }
+        res.status(200).json(user);
+      } catch (err) {
+        console.error('Error fetching user:', err);
+        res.status(500).send(err);
+      }
+    });
+
+
+    // Endpoint to fetch users with accepted agreements
+    app.get('/accepted-agreements-users', async (req, res) => {
+      try {
+        const acceptedAgreements = await agreementsCollection.find({ status: 'accepted' }).toArray();
+        const userEmails = acceptedAgreements.map(agreement => agreement.userEmail);
+        const users = await usersCollection.find({ email: { $in: userEmails } }).toArray();
+        res.status(200).json(users);
+      } catch (err) {
+        res.status(500).send(err);
+      }
+    });
+
+    // Endpoint to set agreement status to pending
+    app.post('/agreements/:id/pending', async (req, res) => {
+      const agreementId = req.params.id;
+      try {
+        const agreement = await agreementsCollection.findOne({ _id: new ObjectId(agreementId) });
+        if (!agreement) {
+          return res.status(404).json({ message: 'Agreement not found.' });
+        }
+        await agreementsCollection.updateOne(
+          { _id: new ObjectId(agreementId) },
+          { $set: { status: 'pending' } }
+        );
+        res.status(200).json({ message: 'Agreement status set to pending successfully.' });
+      } catch (err) {
+        res.status(500).send(err);
+      }
+    });
+
+    // Endpoint to delete an agreement
+    app.delete('/agreements/:id', async (req, res) => {
+      const agreementId = req.params.id;
+      try {
+        const result = await agreementsCollection.deleteOne({ _id: new ObjectId(agreementId) });
+        if (result.deletedCount === 0) {
+          return res.status(404).json({ message: 'Agreement not found.' });
+        }
+        res.status(200).json({ message: 'Agreement deleted successfully.' });
+      } catch (err) {
+        res.status(500).send(err);
+      }
+    });
+
+
+    // Endpoint to create a new coupon
+    app.post('/coupons', async (req, res) => {
+      const { title, description, code, discountPercentage } = req.body;
+      const coupon = {
+        title,
+        description,
+        code,
+        discountPercentage,
+      };
+      try {
+        await couponsCollection.insertOne(coupon);
+        res.status(201).json({ message: 'Coupon created successfully' });
+      } catch (error) {
+        res.status(500).json({ message: 'Failed to create coupon' });
+      }
+    });
+
+    // Endpoint to fetch all coupons
+    app.get('/coupons', async (req, res) => {
+      try {
+        const coupons = await couponsCollection.find().toArray();
+        res.status(200).json(coupons);
+      } catch (error) {
+        res.status(500).json({ message: 'Failed to fetch coupons' });
+      }
+    });
+
+    app.get('/agreements/user/:email', async (req, res) => {
+      const email = req.params.email;
+      try {
+        const agreements = await agreementsCollection.find({ userEmail: email }).toArray();
+        console.log('Agreements:', agreements);
+        res.status(200).json(agreements);
+      } catch (err) {
+        console.error('Error fetching agreements:', err);
+        res.status(500).send(err);
+      }
+    });
+
+    // Endpoint to get database statistics
+    app.get('/database-stats', async (req, res) => {
+      try {
+        const totalRooms = await apartmentsCollection.countDocuments();
+        const availableRooms = await apartmentsCollection.countDocuments({ status: 'available' });
+        const unavailableRooms = await apartmentsCollection.countDocuments({ status: { $ne: 'available' } });
+        const totalUsers = await usersCollection.countDocuments();
+        const totalMembers = await usersCollection.countDocuments({ role: 'member' });
+
+        const availableRoomsPercentage = (availableRooms / totalRooms) * 100;
+        const unavailableRoomsPercentage = (unavailableRooms / totalRooms) * 100;
+
+        res.status(200).json({
+          totalRooms,
+          availableRoomsPercentage,
+          unavailableRoomsPercentage,
+          totalUsers,
+          totalMembers,
+        });
+      } catch (err) {
+        console.error('Error fetching database statistics:', err);
+        res.status(500).send(err);
+      }
+    });
+
+
+    // Endpoint for stripe payment
+    app.post('/create-checkout-session', async (req, res) => {
+      const { priceId } = req.body;
+
+      const session = await stripe.checkout.sessions.create({
+        mode: 'subscription',
+        payment_method_types: ['card'],
+        line_items: [
+          {
+            price: priceId,
+            quantity: 1,
+          },
+        ],
+        success_url: `${process.env.CLIENT_URL}/success.html`,
+        cancel_url: `${process.env.CLIENT_URL}/cancel.html`,
+      });
+
+      res.json({ id: session.id });
+    });
+
+
+
+    // Send a ping to confirm a successful connection
+    await client.db("admin").command({ ping: 1 });
+    console.log("Pinged your deployment. You successfully connected to MongoDB!");
+  } finally {
+    // Ensures that the client will close when you finish/error
+  }
+}
+run().catch(console.dir);
+
+app.get("/", (req, res) => {
+  res.send("The Royal Palace is running");
+});
+
+app.listen(port, () => {
+  console.log(`The Royal Palace is running on port ${port}`);
+});
