@@ -174,7 +174,7 @@ async function run() {
     });
 
     // Endpoint to accept an agreement
-    app.post('/agreements/:id/accept', verifyToken, async (req, res) => {
+    app.post('/agreements/:id/accept', async (req, res) => {
       const agreementId = req.params.id;
       try {
         const agreement = await agreementsCollection.findOne({ _id: new ObjectId(agreementId) });
@@ -196,7 +196,7 @@ async function run() {
     });
 
     // Endpoint to reject an agreement
-    app.post('/agreements/:id/reject', verifyToken, async (req, res) => {
+    app.post('/agreements/:id/reject', async (req, res) => {
       const agreementId = req.params.id;
       try {
         const agreement = await agreementsCollection.findOne({ _id: new ObjectId(agreementId) });
@@ -231,7 +231,7 @@ async function run() {
     });
 
     // Endpoint to fetch announcements
-    app.get('/announcements', verifyToken, async (req, res) => {
+    app.get('/announcements', async (req, res) => {
       try {
         const announcements = await announcementsCollection.find().toArray();
         res.status(200).json(announcements);
@@ -377,7 +377,7 @@ async function run() {
 
 
     // Endpoint for stripe payment
-    app.post('/create-checkout-session', verifyToken, async (req, res) => {
+    app.post('/create-checkout-session', async (req, res) => {
       const { priceId } = req.body;
 
       const session = await stripe.checkout.sessions.create({
