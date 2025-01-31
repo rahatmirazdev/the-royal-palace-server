@@ -5,6 +5,7 @@ const cookieParser = require("cookie-parser");
 const { MongoClient, ServerApiVersion, ObjectId } = require("mongodb");
 const morgan = require("morgan");
 const stripe = require("stripe")(process.env.STRIPE_SECRET_KEY);
+const jwt = require('jsonwebtoken');
 const port = process.env.PORT || 3000;
 const app = express();
 
@@ -50,6 +51,55 @@ async function run() {
       next();
     };
 
+    // Verifying JWT token
+    const verifyToken = async (req, res, next) => {
+      const token = req.cookies?.token;
+
+      if (!token) {
+        return res.status(401).send({ message: 'unauthorized access' });
+      }
+      jwt.verify(token, process.env.ACCESS_TOKEN_SECRET, (err, decoded) => {
+        if (err) {
+          return res.status(401).send({ message: 'unauthorized access' });
+        }
+        req.user = decoded;
+        next();
+      });
+    };
+
+    // Generating JWT token
+    app.post('/jwt', async (req, res) => {
+      const { email } = req.body; // Destructure email from the request body
+      if (!email) {
+        return res.status(400).send({ message: 'Email is required' });
+      }
+      const token = jwt.sign({ email }, process.env.ACCESS_TOKEN_SECRET, {
+        expiresIn: '365d',
+      });
+      res
+        .cookie('token', token, {
+          httpOnly: true,
+          secure: process.env.NODE_ENV === 'production',
+          sameSite: process.env.NODE_ENV === 'production' ? 'none' : 'strict',
+        })
+        .send({ success: true, token }); // Send the token in the response
+    });
+
+    // Endpoint to login
+    app.get('/logout', async (req, res) => {
+      try {
+        res
+          .clearCookie('token', {
+            maxAge: 0,
+            secure: process.env.NODE_ENV === 'production',
+            sameSite: process.env.NODE_ENV === 'production' ? 'none' : 'strict',
+          })
+          .send({ success: true });
+      } catch (err) {
+        res.status(500).send(err);
+      }
+    });
+
     // save or update user in the database
     app.post("/users/:email", async (req, res) => {
       const email = req.params.email;
@@ -64,7 +114,7 @@ async function run() {
     });
 
     // get all users
-    app.get('/users', async (req, res) => {
+    app.get('/users',  async (req, res) => {
       try {
         const users = await usersCollection.find().toArray();
         res.status(200).json(users);
@@ -107,14 +157,14 @@ async function run() {
         apartmentNo,
         rent,
         status: 'pending',
-        requestDate, // Add the request date here
+        requestDate,
       };
       await agreementsCollection.insertOne(agreement);
       res.status(201).json({ message: 'Agreement successful.' });
     });
 
     // Endpoint to fetch agreements
-    app.get('/agreements', async (req, res) => {
+    app.get('/agreements',  async (req, res) => {
       try {
         const agreements = await agreementsCollection.find().toArray();
         res.send(agreements);
@@ -124,7 +174,7 @@ async function run() {
     });
 
     // Endpoint to accept an agreement
-    app.post('/agreements/:id/accept', async (req, res) => {
+    app.post('/agreements/:id/accept', verifyToken, async (req, res) => {
       const agreementId = req.params.id;
       try {
         const agreement = await agreementsCollection.findOne({ _id: new ObjectId(agreementId) });
@@ -146,7 +196,7 @@ async function run() {
     });
 
     // Endpoint to reject an agreement
-    app.post('/agreements/:id/reject', async (req, res) => {
+    app.post('/agreements/:id/reject', verifyToken, async (req, res) => {
       const agreementId = req.params.id;
       try {
         const agreement = await agreementsCollection.findOne({ _id: new ObjectId(agreementId) });
@@ -181,7 +231,7 @@ async function run() {
     });
 
     // Endpoint to fetch announcements
-    app.get('/announcements', async (req, res) => {
+    app.get('/announcements', verifyToken, async (req, res) => {
       try {
         const announcements = await announcementsCollection.find().toArray();
         res.status(200).json(announcements);
@@ -195,14 +245,13 @@ async function run() {
       try {
         const user = await usersCollection.findOne({ email });
         if (!user) {
-          return res.status(404).json({ message: 'User not found' });
+          return res.status(200).json(null);
         }
         res.status(200).json(user);
       } catch (err) {
         res.status(500).send(err);
       }
     });
-
 
     // Endpoint to fetch users with accepted agreements
     app.get('/accepted-agreements-users', async (req, res) => {
@@ -212,6 +261,7 @@ async function run() {
         const users = await usersCollection.find({ email: { $in: userEmails } }).toArray();
         res.status(200).json(users);
       } catch (err) {
+        console.error('Error fetching accepted agreements users:', err);
         res.status(500).send(err);
       }
     });
@@ -327,7 +377,7 @@ async function run() {
 
 
     // Endpoint for stripe payment
-    app.post('/create-checkout-session', async (req, res) => {
+    app.post('/create-checkout-session', verifyToken, async (req, res) => {
       const { priceId } = req.body;
 
       const session = await stripe.checkout.sessions.create({
@@ -348,7 +398,7 @@ async function run() {
 
     // Send a ping to confirm a successful connection
     await client.db("admin").command({ ping: 1 });
-    console.log("Pinged your deployment. You successfully connected to MongoDB!");
+    // console.log("Pinged your deployment. You successfully connected to MongoDB!");
   } finally {
     // Ensures that the client will close when you finish/error
   }
