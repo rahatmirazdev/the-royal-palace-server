@@ -6,7 +6,8 @@ const { MongoClient, ServerApiVersion, ObjectId } = require("mongodb");
 const morgan = require("morgan");
 const stripe = require("stripe")(process.env.STRIPE_SECRET_KEY);
 const jwt = require('jsonwebtoken');
-const port = process.env.PORT || 3000;
+const portArg = process.argv.find(arg => arg.startsWith('--port='));
+const port = portArg ? parseInt(portArg.split('=')[1]) : process.env.PORT || 3000;
 const app = express();
 
 // middleware
@@ -21,6 +22,7 @@ app.use(cookieParser());
 app.use(morgan("dev"));
 
 const uri = `mongodb+srv://${process.env.DB_USER}:${process.env.DB_PASS}@cluster0.kbbnu.mongodb.net/?retryWrites=true&w=majority&appName=Cluster0`;
+console.log("MongoDB URI:", uri.replace(/mongodb\+srv:\/\/([^:]+):[^@]+@/, 'mongodb+srv://$1:****@')); // Logs URI with hidden password
 
 const client = new MongoClient(uri, {
   serverApi: {
@@ -30,11 +32,33 @@ const client = new MongoClient(uri, {
   },
 });
 
+// Database connection verification route
+app.get('/db-connection-status', (req, res) => {
+  res.json({
+    connected: client.topology?.isConnected() || false,
+    dbName: 'building_management',
+    collections: ['users', 'apartments', 'agreements', 'announcements', 'coupons']
+  });
+});
+
 async function run() {
   try {
-    // await client.connect();
+    // Connect to MongoDB
+    await client.connect();
+    console.log("✅ MongoDB Connection Successful!");
 
+    // Log database and collections
     const db = client.db('building_management');
+    const collections = ['users', 'apartments', 'agreements', 'announcements', 'coupons'];
+
+    console.log("📊 Database: building_management");
+    console.log("📋 Collections:");
+
+    for (const collName of collections) {
+      const count = await db.collection(collName).countDocuments();
+      console.log(`   - ${collName}: ${count} documents`);
+    }
+
     const usersCollection = db.collection('users');
     const apartmentsCollection = db.collection('apartments');
     const agreementsCollection = db.collection('agreements');
@@ -114,7 +138,7 @@ async function run() {
     });
 
     // get all users
-    app.get('/users',  async (req, res) => {
+    app.get('/users', async (req, res) => {
       try {
         const users = await usersCollection.find().toArray();
         res.status(200).json(users);
@@ -164,7 +188,7 @@ async function run() {
     });
 
     // Endpoint to fetch agreements
-    app.get('/agreements',  async (req, res) => {
+    app.get('/agreements', async (req, res) => {
       try {
         const agreements = await agreementsCollection.find().toArray();
         res.send(agreements);
