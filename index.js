@@ -12,7 +12,14 @@ const app = express();
 
 // middleware
 const corsOptions = {
-  origin: ["http://localhost:5173", "http://localhost:5174", "https://theroyal-palace.web.app"],
+  origin: [
+    "http://localhost:5173",
+    "http://localhost:5174",
+    "https://theroyal-palace.web.app",
+    "https://theroyalpalace-dfr7s1i81-rahatahmedmiraz32gmailcoms-projects.vercel.app",
+    "https://theroyalpalace.vercel.app",
+    "https://theroyalpalace-a32rooblm-rahatahmedmiraz32gmailcoms-projects.vercel.app"
+  ],
   credentials: true,
   optionSuccessStatus: 200,
 };
@@ -31,6 +38,43 @@ const client = new MongoClient(uri, {
   },
 });
 
+// Database connection and collections setup
+let db;
+let usersCollection;
+let apartmentsCollection;
+let agreementsCollection;
+let announcementsCollection;
+let couponsCollection;
+
+// Connect to MongoDB once
+async function connectToMongoDB() {
+  try {
+    if (!client.topology || !client.topology.isConnected()) {
+      await client.connect();
+      console.log("Connected to MongoDB");
+    }
+
+    db = client.db('building_management');
+    usersCollection = db.collection('users');
+    apartmentsCollection = db.collection('apartments');
+    agreementsCollection = db.collection('agreements');
+    announcementsCollection = db.collection('announcements');
+    couponsCollection = db.collection('coupons');
+
+    return {
+      db,
+      usersCollection,
+      apartmentsCollection,
+      agreementsCollection,
+      announcementsCollection,
+      couponsCollection
+    };
+  } catch (error) {
+    console.error("MongoDB connection error:", error);
+    throw error;
+  }
+}
+
 // Database connection verification route
 app.get('/db-connection-status', (req, res) => {
   res.json({
@@ -42,23 +86,11 @@ app.get('/db-connection-status', (req, res) => {
 
 async function run() {
   try {
-    // Log database and collections
-    const db = client.db('building_management');
-    const collections = ['users', 'apartments', 'agreements', 'announcements', 'coupons'];
+    // Connect to MongoDB at the start of each function call
+    const collections = await connectToMongoDB();
 
-    // console.log("📊 Database: building_management");
-    // console.log("📋 Collections:");
-
-    for (const collName of collections) {
-      const count = await db.collection(collName).countDocuments();
-      // console.log(`   - ${collName}: ${count} documents`);
-    }
-
-    const usersCollection = db.collection('users');
-    const apartmentsCollection = db.collection('apartments');
-    const agreementsCollection = db.collection('agreements');
-    const announcementsCollection = db.collection('announcements');
-    const couponsCollection = db.collection('coupons');
+    // Log successful connection
+    console.log("MongoDB connection established and collections initialized");
 
     // Middleware to check if the user is an admin
     const verifyAdmin = async (req, res, next) => {
@@ -455,7 +487,8 @@ async function run() {
   } finally {
   }
 }
-// run().catch(console.dir);
+// Initialize all routes and middleware first
+run().catch(console.dir);
 
 app.get("/", (req, res) => {
   res.send("The Royal Palace is running");
@@ -464,3 +497,6 @@ app.get("/", (req, res) => {
 app.listen(port, () => {
   // console.log(`The Royal Palace is running on port ${port}`);
 });
+
+// For Vercel serverless deployment
+module.exports = app;
