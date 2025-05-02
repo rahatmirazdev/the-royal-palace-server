@@ -323,6 +323,43 @@ async function run() {
       }
     });
 
+    // Endpoint to fetch pending agreements with user details
+    app.get('/pending-agreements', async (req, res) => {
+      try {
+        // Find all pending agreements
+        const pendingAgreements = await agreementsCollection.find({ status: 'pending' }).toArray();
+
+        // Get all the user emails from agreements
+        const userEmails = [...new Set(pendingAgreements.map(agreement => agreement.userEmail))];
+
+        // Fetch user details for these emails
+        const users = await usersCollection.find({ email: { $in: userEmails } }).toArray();
+
+        // Create a map of email to user details for faster lookup
+        const userMap = {};
+        users.forEach(user => {
+          userMap[user.email] = user;
+        });
+
+        // Enhance agreement data with user details
+        const enhancedAgreements = pendingAgreements.map(agreement => {
+          const user = userMap[agreement.userEmail] || {};
+          return {
+            ...agreement,
+            userDetails: {
+              name: user.name || agreement.userName || "Unknown User",
+              photoURL: user.photoURL || null,
+              timestamp: user.timestamp || Date.now()
+            }
+          };
+        });
+
+        res.status(200).json(enhancedAgreements);
+      } catch (err) {
+        console.error('Error fetching pending agreements:', err);
+        res.status(500).json({ message: 'Failed to fetch pending agreements' });
+      }
+    });
 
     // Endpoint to create a new coupon
     app.post('/coupons', async (req, res) => {
