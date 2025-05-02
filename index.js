@@ -12,7 +12,7 @@ const app = express();
 
 // middleware
 const corsOptions = {
-  origin: ["http://localhost:5173", "http://localhost:5174", "https://theroyalpalace.vercel.app"],
+  origin: ["http://localhost:5173", "http://localhost:5174", "https://theroyal-palace.web.app"],
   credentials: true,
   optionSuccessStatus: 200,
 };
@@ -22,7 +22,6 @@ app.use(cookieParser());
 app.use(morgan("dev"));
 
 const uri = `mongodb+srv://${process.env.DB_USER}:${process.env.DB_PASS}@cluster0.kbbnu.mongodb.net/?retryWrites=true&w=majority&appName=Cluster0`;
-// console.log("MongoDB URI:", uri.replace(/mongodb\+srv:\/\/([^:]+):[^@]+@/, 'mongodb+srv://$1:****@')); // Logs URI with hidden password
 
 const client = new MongoClient(uri, {
   serverApi: {
@@ -456,7 +455,7 @@ async function run() {
   } finally {
   }
 }
-run().catch(console.dir);
+// run().catch(console.dir);
 
 app.get("/", (req, res) => {
   res.send("The Royal Palace is running");
