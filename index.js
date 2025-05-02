@@ -12,7 +12,7 @@ const app = express();
 
 // middleware
 const corsOptions = {
-  origin: ["http://localhost:5173", "http://localhost:5174", "https://theroyal-palace.web.app"],
+  origin: ["http://localhost:5173", "http://localhost:5174", "https://theroyalpalace.vercel.app"],
   credentials: true,
   optionSuccessStatus: 200,
 };
@@ -22,7 +22,7 @@ app.use(cookieParser());
 app.use(morgan("dev"));
 
 const uri = `mongodb+srv://${process.env.DB_USER}:${process.env.DB_PASS}@cluster0.kbbnu.mongodb.net/?retryWrites=true&w=majority&appName=Cluster0`;
-console.log("MongoDB URI:", uri.replace(/mongodb\+srv:\/\/([^:]+):[^@]+@/, 'mongodb+srv://$1:****@')); // Logs URI with hidden password
+// console.log("MongoDB URI:", uri.replace(/mongodb\+srv:\/\/([^:]+):[^@]+@/, 'mongodb+srv://$1:****@')); // Logs URI with hidden password
 
 const client = new MongoClient(uri, {
   serverApi: {
@@ -44,19 +44,19 @@ app.get('/db-connection-status', (req, res) => {
 async function run() {
   try {
     // Connect to MongoDB
-    await client.connect();
-    console.log("✅ MongoDB Connection Successful!");
+    // await client.connect();
+    // console.log("✅ MongoDB Connection Successful!");
 
     // Log database and collections
     const db = client.db('building_management');
     const collections = ['users', 'apartments', 'agreements', 'announcements', 'coupons'];
 
-    console.log("📊 Database: building_management");
-    console.log("📋 Collections:");
+    // console.log("📊 Database: building_management");
+    // console.log("📋 Collections:");
 
     for (const collName of collections) {
       const count = await db.collection(collName).countDocuments();
-      console.log(`   - ${collName}: ${count} documents`);
+      // console.log(`   - ${collName}: ${count} documents`);
     }
 
     const usersCollection = db.collection('users');
@@ -472,5 +472,5 @@ app.get("/", (req, res) => {
 });
 
 app.listen(port, () => {
-  console.log(`The Royal Palace is running on port ${port}`);
+  // console.log(`The Royal Palace is running on port ${port}`);
 });
