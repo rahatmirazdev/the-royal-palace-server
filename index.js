@@ -244,6 +244,7 @@ async function run() {
       const announcement = {
         title,
         description,
+        timestamp: new Date(),
       };
 
       try {
